@@ -1,18 +1,19 @@
-import { FunctionBody, FunctionCall, FunctionDeclartion, Parser, Program } from "./parser";
+import { FunctionBody, FunctionCall, FunctionDeclare, Parser, Program } from "./parser";
 import { CharStream, Tokenizer, TokenType } from "./tokenizer";
 
 abstract class AstVisitor {
     visitProgram(prog: Program):any {
         let retVal: any;
         for(let x of prog.statements) {
-            if (typeof (x as FunctionDeclartion).body === 'object') {
-                retVal = this.visitFunctionDecl(x as FunctionDeclartion);
+            if (typeof (x as FunctionDeclare).body === 'object') {
+                retVal = this.visitFunctionDecl(x as FunctionDeclare);
             } else {
                 retVal = this.visitFunctionCall(x as FunctionCall);
             }
         }
+        return retVal;
     }
-    visitFunctionDecl(functionDecl:FunctionDeclartion):any {
+    visitFunctionDecl(functionDecl:FunctionDeclare):any {
         return this.visitFunctionBody(functionDecl.body);
     }
     visitFunctionBody(functionBody:FunctionBody):any {
@@ -39,7 +40,7 @@ class RefResolver extends AstVisitor {
             if (typeof functionCall.parameters === 'object') {
                 this.resolveFunctionCall(prog, functionCall);
             } else {
-                this.visitFunctionDecl(x as FunctionDeclartion);
+                this.visitFunctionDecl(x as FunctionDeclare);
             }
         }
     }
@@ -61,9 +62,9 @@ class RefResolver extends AstVisitor {
             }
         }
     }
-    private findFunctionDecl(prog: Program, name: string):FunctionDeclartion | null {
+    private findFunctionDecl(prog: Program, name: string):FunctionDeclare | null {
         for(let x of prog?.statements) {
-            let functionDecl = x as FunctionDeclartion;
+            let functionDecl = x as FunctionDeclare;
             if (typeof functionDecl.body === 'object' && functionDecl.name == name) {
                 return functionDecl;
             }
@@ -73,7 +74,7 @@ class RefResolver extends AstVisitor {
 }
 
 // 遍历AST，执行函数调用
-class Intepretor extends AstVisitor {
+class Interpreter extends AstVisitor {
     visitProg(prog:Program):any {
         let retVal:any;
         for(let x of prog.statements) {
@@ -111,7 +112,7 @@ class Intepretor extends AstVisitor {
 
 // 主程序
 
-function compileAndRun(program: string) {
+export function compileAndRun(program: string) {
     console.log('源代码: ');
     console.log(program);
 
@@ -135,6 +136,6 @@ function compileAndRun(program: string) {
 
     // 运行程序
     console.log("\n运行程序:");
-    let retVal = new Intepretor().visitProg(prog);
+    let retVal = new Interpreter().visitProg(prog);
     console.log("程序返回值: " + retVal);
 }

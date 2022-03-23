@@ -18,7 +18,7 @@ export class Program extends AstNode {
     }
 }
 
-export class FunctionDeclartion extends Statement {
+export class FunctionDeclare extends Statement {
     name: string;
     body: FunctionBody;
     constructor(name: string, body: FunctionBody) {
@@ -27,7 +27,7 @@ export class FunctionDeclartion extends Statement {
         this.body = body;
     }
     public dump(prefix: string): void {
-        console.log(prefix + "FunctionDeclartion " + this.name)
+        console.log(prefix + "FunctionDeclare " + this.name)
         this.body.dump(prefix + "\t");
     }
 }
@@ -47,7 +47,7 @@ export class FunctionBody extends AstNode {
 export class FunctionCall extends Statement {
     name: string;
     parameters: string[];
-    definition: FunctionDeclartion | null = null;
+    definition: FunctionDeclare | null = null;
 
     constructor(name: string, parameters: string[]) {
         super();
@@ -73,7 +73,7 @@ export class Parser {
 
         while(token.type !== TokenType.EOF) {
             if (token.type === TokenType.Keyword && token.text === 'function') {
-                stmt = this.parseFunctionDeclartion();
+                stmt = this.parseFunctionDeclare();
             } else if (token.type === TokenType.Identifier) {
                 this.parseFunctionCall();
             }
@@ -93,7 +93,7 @@ export class Parser {
      * functionDecl: "function" Identifier "(" ")" functionBody;
      * 
      */
-    parseFunctionDeclartion(): FunctionDeclartion | null {
+    parseFunctionDeclare(): FunctionDeclare | null {
         console.log("in FunctionDecl");
         this.tokenizer.next();
 
@@ -105,7 +105,7 @@ export class Parser {
                 if (t2.text === ')') {
                     let functionBody = this.parseFunctionBody();
                     if (functionBody !== null) {
-                        return new FunctionDeclartion(t.text, functionBody);
+                        return new FunctionDeclare(t.text, functionBody);
                     } else {
                         console.log("Error parsing FunctionBody in FunctionDecl");
                         return null;
