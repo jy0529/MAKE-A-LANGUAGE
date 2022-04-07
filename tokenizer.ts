@@ -1,4 +1,6 @@
-export enum TokenType { Keyword, Identifier, StringLiteral, Seperator, Operator, EOF };
+export enum TokenType {
+    Keyword, Identifier, StringLiteral, IntegerLiteral, DecimalLiteral, NullLiteral, BooleanLiteral, ParenL , Separator, Operator, EOF
+};
 
 export interface Token {
     type: TokenType;
@@ -69,7 +71,7 @@ export class Tokenizer {
                 ch === '}' || ch === ';' || ch === ','
             ) {
                 this.stream.next();
-                return { type: TokenType.Seperator, text: ch };                
+                return { type: TokenType.Separator, text: ch };                
             } else if (ch === '/') {
                 this.stream.next();
                 let ch1 = this.stream.peek();

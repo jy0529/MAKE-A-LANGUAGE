@@ -1,64 +1,31 @@
+/**
+ * 语法分析器
+ * @author Jy
+ * 
+ * 当前特性:
+ * 1. 简化版的函数声明
+ * 2. 简化版的函数调用
+ * 3. 简化版的表达式
+ * 
+ * 当前语法法则:
+ * prog = statementList? EOF;
+ * statementList = (variableDecl | functionDecl | expressionStatement)+ ; 
+ * variableDecl = 'let' Identifier typeAnnotation? ('=' singleExpression) ';';
+ * typeAnnotation = ':' typeName;
+ * functionDecl = 'function' Identifier '(' ')' functionBody;
+ * functionBody = '{' statementList? '}';
+ * statement: functionDecl | expressionStatement;
+ * expressionStatement: expression ';';
+ * expression: primary (binOp primary)*;
+ * primary: StringLiteral | DecimalLiteral | IntegerLiteral | BooleanLiteral | NullLiteral | '(' expression ')' | functionCall;
+ * binOp: '+' | '-' | '*' | '/' | '%' | '==' | '!=' | '>' | '<' | '>=' | '<=' | '&&' | '||';
+ * functionCall: Identifier '(' parameterList? ')';
+ * parameterList = expression (',' expression)*;
+ */
+
+
+import { Block, Expression, ExpressionStatement, FunctionCall, FunctionDecl, Prog, Statement, VariableDecl } from './ast';
 import { Tokenizer, TokenType, Token } from './tokenizer';
-
-export abstract class AstNode {
-    public abstract dump(prefix: string): void;
-}
-
-export abstract class Statement extends AstNode {}
-
-export class Program extends AstNode {
-    statements: Statement[] = [];
-    constructor(statements: Statement[]) {
-        super();
-        this.statements = statements;
-    }
-    public dump(prefix: string): void {
-        console.log(prefix + "Program");
-        this.statements.forEach(s => s.dump(prefix + "\t"));
-    }
-}
-
-export class FunctionDeclare extends Statement {
-    name: string;
-    body: FunctionBody;
-    constructor(name: string, body: FunctionBody) {
-        super();
-        this.name = name;
-        this.body = body;
-    }
-    public dump(prefix: string): void {
-        console.log(prefix + "FunctionDeclare " + this.name)
-        this.body.dump(prefix + "\t");
-    }
-}
-
-export class FunctionBody extends AstNode {
-    statements: FunctionCall[];
-    constructor(statements: FunctionCall[]) {
-        super();
-        this.statements = statements;
-    }
-    public dump(prefix: string): void {
-        console.log(prefix + "FunctionBody");
-        this.statements.forEach(s => s.dump(prefix + "\t"));
-    }
-}
-
-export class FunctionCall extends Statement {
-    name: string;
-    parameters: string[];
-    definition: FunctionDeclare | null = null;
-
-    constructor(name: string, parameters: string[]) {
-        super();
-        this.name = name;
-        this.parameters = parameters;
-    }
-    public dump(prefix: string): void {
-        console.log(prefix + "FunctionCall " + this.name + (this.definition !== null ? ', resolved' : ', not resolved'));
-        this.parameters.forEach(p => console.log(prefix + "\t" + "Parameter: " + p));
-    }
-}
 
 export class Parser {
     tokenizer: Tokenizer;
@@ -66,35 +33,101 @@ export class Parser {
         this.tokenizer = tokenizer;
     }
 
-    parseProgram(): Program {
+    parseProgram(): Prog {
+        return new Prog(this.parseStatementList());
+    }
+
+    parseStatementList(): Statement[] {
         let stmts: Statement[] = [];
-        let stmt: Statement | null = null;
-        let token = this.tokenizer.peek();
-
-        while(token.type !== TokenType.EOF) {
-            if (token.type === TokenType.Keyword && token.text === 'function') {
-                stmt = this.parseFunctionDeclare();
-            } else if (token.type === TokenType.Identifier) {
-                this.parseFunctionCall();
-            }
-
+        while(this.tokenizer.peek().type !== TokenType.EOF) {
+            let stmt = this.parseStatement();
             if (stmt !== null) {
                 stmts.push(stmt);
+            } else {
+                console.log("Error parsing a statement");
+                return [];
             }
-
-            token = this.tokenizer.peek();
         }
-        return new Program(stmts);
+        return stmts;
+    }
+
+    parseStatement(): Statement | null {
+        let token = this.tokenizer.peek();
+        if (token.type === TokenType.Keyword && token.text === 'function') {
+            return this.parseFunctionDeclare();
+        } else if (token.text === 'let') {
+            return this.parseVariableDecl();
+        } else if (
+                token.type === TokenType.Identifier ||
+                token.type === TokenType.StringLiteral ||
+                token.type === TokenType.DecimalLiteral ||
+                token.type === TokenType.IntegerLiteral ||
+                token.type === TokenType.ParenL
+            ) {
+            return this.parseExpressionStatement();
+        } else {
+            console.log("Can not recognize a expression start with " + token.text);
+            return null;
+        }
     }
 
     /**
-     * 
+     * 解析变量声明
+     * 语法规则:
+     * variableDecl: 'let'? Identifier typeAnnotation? ('=' singleExpression) ';';
+     */
+    parseVariableDecl(): VariableDecl | null {
+        this.tokenizer.next();
+        let t = this.tokenizer.next();
+        if (t.type === TokenType.Identifier) {
+            let varName:string = t.text;
+
+            let varType:string = 'any';
+            let init:Expression|null = null;
+
+            let t1 = this.tokenizer.peek();
+            // 类型标注
+            if (t1.text === ':') {
+                this.tokenizer.next();
+                t1 = this.tokenizer.peek();
+                if (t1.type === TokenType.Identifier) {
+                    this.tokenizer.next();
+                    varType = t1.text;
+                    t1 = this.tokenizer.peek();
+                } else {
+                    console.log("Expecting a type name, while we got a " + t1.text);
+                    return null;
+                }
+            }
+
+            // 初始化 
+            if (t1.text === '=') {
+                this.tokenizer.next();
+                init = this.parseExpression();
+            }
+
+            // 分号
+            t1 = this.tokenizer.peek();
+            if (t1.text === ';') {
+                this.tokenizer.next();
+                return new VariableDecl(varName, varType, init);
+            } else {
+                console.log("Expecting ';' in VariableDecl, while we got a " + t1.text);
+                return null;
+            }
+        } else {
+            console.log("Expecting a variable name, while we got a " + t.text);
+            return null;
+        }
+    }
+
+    /**
+     * 解析函数声明
      * 语法规则
      * functionDecl: "function" Identifier "(" ")" functionBody;
      * 
      */
-    parseFunctionDeclare(): FunctionDeclare | null {
-        console.log("in FunctionDecl");
+    parseFunctionDeclare(): FunctionDecl | null {
         this.tokenizer.next();
 
         let t = this.tokenizer.next();
@@ -105,7 +138,7 @@ export class Parser {
                 if (t2.text === ')') {
                     let functionBody = this.parseFunctionBody();
                     if (functionBody !== null) {
-                        return new FunctionDeclare(t.text, functionBody);
+                        return new FunctionDecl(t.text, functionBody);
                     } else {
                         console.log("Error parsing FunctionBody in FunctionDecl");
                         return null;
@@ -127,28 +160,45 @@ export class Parser {
      * 
      * functionBody: "{" functionCall* "}"
      */
-    parseFunctionBody(): FunctionBody | null {
-        let stmts: FunctionCall[] = [];
-        let t:Token = this.tokenizer.next();
+    parseFunctionBody(): Block | null {
+        let t:Token = this.tokenizer.peek();
         if (t.text === '{') {
-            while(this.tokenizer.peek().type === TokenType.Identifier) {
-            let functionCall = this.parseFunctionCall();
-                if (functionCall !== null) {
-                    stmts.push(functionCall);
-                } else {
-                    console.log('Error parsing a FunctionCall in FunctionBody');
-                    return null;
-                }
-                t = this.tokenizer.next();
-                if (t.text === '}') {
-                    return new FunctionBody(stmts);
-                }
-            }
+           this.tokenizer.next();
+           let stmts = this.parseStatementList();
+           t = this.tokenizer.next();
+           if (t.text === '}') {
+               return new Block(stmts);
+           } else {
+                console.log("Expecting '}' in FunctionBody, while we got a " + t.text);
+                return null;
+           }
         } else {
-            console.log('Expecting "}" in FunctionBody, while we got a ' + t.text);
+            console.log("Expecting '{' in FunctionBody, while we got a " + t.text);
             return null;
         }
     }
+
+    parseExpressionStatement(): ExpressionStatement | null {
+        let exp = this.parseExpression();
+        if (exp != null) {
+            let t = this.tokenizer.peek();
+            if (t.text === ';') {
+                this.tokenizer.next();
+                return new ExpressionStatement(exp);
+            } else {
+                console.log("Expecting ';' in ExpressionStatement, while we got a " + t.text);
+                return null;
+            }
+        } else {
+            console.log("Error parsing ExpressionStatement");
+            return null;
+        }
+    }
+
+    parseExpression(): Expression | null {
+        return null;
+    }
+
 
     /**
      * 
@@ -157,7 +207,7 @@ export class Parser {
      * parameterList : StringLiteral (',' StringLiteral)* ;
      */
     parseFunctionCall(): FunctionCall | null {
-        let params: string[] = [];
+        let params: Expression[] = [];
         let t: Token = this.tokenizer.next();
         if (t.type === TokenType.Identifier) {
             let t1:Token = this.tokenizer.next();
@@ -165,7 +215,7 @@ export class Parser {
                 let t2:Token = this.tokenizer.next();
                 while(t2.text !== ')') {
                     if (t2.type === TokenType.StringLiteral) {
-                        params.push(t2.text);
+                        // params.push(t2.text);
                     } else {
                         console.log("Expecting parameter in FunctionCall, while we got a " + t2.text);
                         return null;

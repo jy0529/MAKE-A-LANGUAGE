@@ -1,112 +1,83 @@
-import { FunctionBody, FunctionCall, FunctionDeclare, Parser, Program } from "./parser";
+import { AstVisitor, Block, FunctionCall, FunctionDecl, Prog, Variable, VariableDecl } from "./ast";
+import { Parser } from "./parser";
+import { Enter, RefResolver, SymTable } from "./semantic";
 import { CharStream, Tokenizer, TokenType } from "./tokenizer";
-
-abstract class AstVisitor {
-    visitProgram(prog: Program):any {
-        let retVal: any;
-        for(let x of prog.statements) {
-            if (typeof (x as FunctionDeclare).body === 'object') {
-                retVal = this.visitFunctionDecl(x as FunctionDeclare);
-            } else {
-                retVal = this.visitFunctionCall(x as FunctionCall);
-            }
-        }
-        return retVal;
-    }
-    visitFunctionDecl(functionDecl:FunctionDeclare):any {
-        return this.visitFunctionBody(functionDecl.body);
-    }
-    visitFunctionBody(functionBody:FunctionBody):any {
-        let retVal:any;
-        for(let x of functionBody.statements) {
-            retVal = this.visitFunctionCall(x);
-        }
-        return retVal;
-    }
-    visitFunctionCall(functionCall: FunctionCall):any {
-        return undefined;
-    }
-}
-
-// 语义分析
-// 函数引用消解
-
-class RefResolver extends AstVisitor {
-    prog: Program | null = null;
-    visitProg(prog: Program):any {
-        this.prog = prog;
-        for(let x of prog.statements) {
-            let functionCall = x as FunctionCall;
-            if (typeof functionCall.parameters === 'object') {
-                this.resolveFunctionCall(prog, functionCall);
-            } else {
-                this.visitFunctionDecl(x as FunctionDeclare);
-            }
-        }
-    }
-    visitFunctionBody(functionBody: FunctionBody):any {
-        if (this.prog !== null) {
-            for(let x of functionBody.statements) {
-                return this.resolveFunctionCall(this.prog, x);
-            }
-        }
-    }
-
-    private resolveFunctionCall(prog: Program, functionCall: FunctionCall) {
-        let functionDecl = this.findFunctionDecl(prog, functionCall.name);
-        if (functionDecl !== null) {
-            functionCall.definition = functionDecl;
-        } else {
-            if (functionCall.name !== 'println') { // 系统函数
-                console.log("cannot find definition of function " + functionCall.name);
-            }
-        }
-    }
-    private findFunctionDecl(prog: Program, name: string):FunctionDeclare | null {
-        for(let x of prog?.statements) {
-            let functionDecl = x as FunctionDeclare;
-            if (typeof functionDecl.body === 'object' && functionDecl.name == name) {
-                return functionDecl;
-            }
-        }
-        return null;
-    }
-}
 
 // 遍历AST，执行函数调用
 class Interpreter extends AstVisitor {
-    visitProg(prog:Program):any {
-        let retVal:any;
-        for(let x of prog.statements) {
-            let functionCall = x as FunctionCall;
-            if (typeof functionCall.parameters === 'object') {
-                retVal = this.runFunction(functionCall);
-            }
-        };
-        return retVal;
+    // 存储变量值的区域
+    values: Map<string, any> = new Map();
+
+    visitFunctionDecl(functionDecl: FunctionDecl) {
+        // nothing to do1
     }
 
-    visitFunctionBody(functionBody: FunctionBody): any {
-        let retVal: any;
-        for(let x of functionBody.statements) {
-            retVal = this.runFunction(x);
-        }
-        return retVal;
-    }
-
-    private runFunction(functionCall: FunctionCall) {
-        if (functionCall.name === 'println') { // 内置函数
+    /**
+     * 运行函数调用
+     * 原理：根据函数定义，执行其函数体
+     * @param functionCall 
+     */
+    visitFunctionCall(functionCall: FunctionCall): any {
+        if (functionCall.name === 'println') {
             if (functionCall.parameters.length > 0) {
-                console.log(functionCall.parameters[0]);
+                let retVal = this.visit(functionCall.parameters[0]);
+                if (typeof (retVal as LeftValue).variable == 'object') {
+                    retVal = this.getVariableValue((retVal as LeftValue).variable.name);
+                }
+                console.log(retVal);
             } else {
-                console.log()
+                console.log();
             }
             return 0;
         } else {
-            if (functionCall.definition !== null) {
-                this.visitFunctionBody(functionCall.definition.body);
+            if (functionCall.decl !== null) {
+                this.visitBlock(functionCall.decl.body);
             }
         }
+    }
+
+    /**
+     * 变量声明
+     * 如果存在变量初始化部分，要存变量值
+     * @param variableDecl 
+     */
+    visitVariableDecl(variableDecl: VariableDecl) {
+        if (variableDecl.init != null) {
+            let v = this.visit(variableDecl.init);
+            if (this.isLeftValue(v)) {
+                v = this.getVariableValue((v as LeftValue).variable.name);
+            }
+            this.setVariableValue(variableDecl.name, v);
+            return v;
+        }
+    }
+
+    /**
+     * 获取变量的值
+     * @param v 
+     * @returns 
+     */
+    visitVariable(v: Variable): any {
+        return new LeftValue(v);
+    }
+
+    private getVariableValue(varName: string): any {
+        return this.values.get(varName);
+    }
+
+    private setVariableValue(varName: string, value: any) {
+        return this.values.set(varName, value);
+    }
+
+    private isLeftValue(v: any): boolean {
+        return typeof (v as LeftValue).variable == 'object';
+    }
+}
+
+class LeftValue {
+    variable: Variable;
+    constructor(variable: Variable) {
+        this.variable = variable;
     }
 }
 
@@ -125,17 +96,19 @@ export function compileAndRun(program: string) {
     tokenizer = new Tokenizer(new CharStream(program));
 
     // 语法分析
-    let prog:Program = new Parser(tokenizer).parseProgram();
+    let prog:Prog = new Parser(tokenizer).parseProgram();
     console.log("\n语法分析后的AST: ");
     prog.dump("");
 
     // 语义分析
-    new RefResolver().visitProg(prog);
+    let symTable = new SymTable();
+    new Enter(symTable).visit(prog);
+    new RefResolver(symTable).visit(prog);
     console.log("\n语法分析后的AST, 自定义函数的调用已被消解:");
     prog.dump("");
 
     // 运行程序
     console.log("\n运行程序:");
-    let retVal = new Interpreter().visitProg(prog);
+    let retVal = new Interpreter().visit(prog);
     console.log("程序返回值: " + retVal);
 }
