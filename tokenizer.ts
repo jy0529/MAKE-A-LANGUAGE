@@ -2,9 +2,36 @@ export enum TokenType {
     Keyword, Identifier, StringLiteral, IntegerLiteral, DecimalLiteral, NullLiteral, BooleanLiteral, ParenL , Separator, Operator, EOF
 };
 
-export interface Token {
+export class Token {
     type: TokenType;
     text: string;
+    pos: Position;
+    constructor(type: TokenType, text: string, pos: Position) {
+        this.type = type;
+        this.text = text;
+        this.pos = pos;
+    }
+    toString(): string {
+        return "Token(" + TokenType[this.type] + "," + this.text + ", @" + this.pos.toString() + ")";
+    }
+}
+
+export class Position {
+    begin:number;
+    end:number;
+    line:number;
+    col:number;
+
+    constructor(begin:number, end:number, line:number, col:number) {
+        this.begin = begin;
+        this.end = end;
+        this.line = line;
+        this.col = col;
+    }
+    
+    toString():string {
+        return "(ln: " + this.line + ", col:" + this.col + + ", pos:" + this.begin + ")";
+    }
 }
 
 export class CharStream {
@@ -35,35 +62,38 @@ export class CharStream {
 
 export class Tokenizer {
     stream: CharStream;
-    nextToken: Token={ type: TokenType.EOF, text: ""};
+    tokens: Array<Token> = new Array<Token>();
+    private lastPos: Position = new Position(0, 0, 0, 0);
     constructor(stream: CharStream) {
         this.stream = stream;
     }
     
     next():Token {
-        if (this.nextToken.type === TokenType.EOF && !this.stream.eof()) {
-            this.nextToken = this.getToken();
+        let t:Token | undefined = this.tokens.shift();
+        if (typeof t === 'undefined') {
+            t = this.getToken();
         }
-        let lastToken = this.nextToken;
-        this.nextToken = this.getToken();
-        return lastToken;
+        this.lastPos = t.pos;
+        return t;
     }
 
     peek():Token {
-        if (this.nextToken.type === TokenType.EOF && !this.stream.eof()) {
-            this.nextToken = this.getToken();
+        let t:Token | undefined = this.tokens[0];
+        if (typeof t === 'undefined') {
+            t = this.getToken();
+            this.tokens.push(t);
         }
-        return this.nextToken;
+        return t;
     }
 
     private getToken(): Token {
         this.skipWhiteSpaces();
         if (this.stream.eof()) {
-            return { type: TokenType.EOF, text: '' };
+            return new Token(TokenType.EOF, 'EOF', this.lastPos);
         } else {
             let ch: string = this.stream.peek();
             if (this.isLetter(ch) || this.isDigit('ch')) {
-                return this.parseIdentifer();
+                return this.parseIdentifier();
             } else if (ch === '"') {
                 return this.parseStringLiteral();
             } else if (
@@ -71,7 +101,7 @@ export class Tokenizer {
                 ch === '}' || ch === ';' || ch === ','
             ) {
                 this.stream.next();
-                return { type: TokenType.Separator, text: ch };                
+                return new Token(TokenType.Separator, ch, this.lastPos);
             } else if (ch === '/') {
                 this.stream.next();
                 let ch1 = this.stream.peek();
@@ -81,42 +111,42 @@ export class Tokenizer {
                     this.skipSingleLineComment();
                 } else if (ch1 === '=') {
                     this.stream.next();
-                    return { type: TokenType.Operator, text: '/=' };
+                    return new Token(TokenType.Operator, '/=', this.lastPos);
                 } else {
-                    return { type: TokenType.Operator, text: '/' };
+                    return new Token(TokenType.Operator, '/', this.lastPos);
                 }
             } else if (ch === '+') {
                 this.stream.next();
                 let ch1 = this.stream.next();
                 if (ch1 === '+') {
                     this.stream.next();
-                    return { type: TokenType.Operator, text: '++' };
+                    return new Token(TokenType.Operator, '++', this.lastPos);
                 } else if (ch1 === '=') {
                     this.stream.next();
-                    return { type: TokenType.Operator, text: '+=' };
+                    return new Token(TokenType.Operator, '+=', this.lastPos);
                 } else  {
-                    return { type: TokenType.Operator, text: '+' };
+                    return new Token(TokenType.Operator, '+', this.lastPos);
                 }
             } else if (ch === '-') {
                 this.stream.next();
                 let ch1 = this.stream.next();
                 if (ch1 === '-') {
                     this.stream.next();
-                    return { type: TokenType.Operator, text: '--' };
+                    return new Token(TokenType.Operator, '--', this.lastPos);
                 } else if (ch1 === '=') {
                     this.stream.next();
-                    return { type: TokenType.Operator, text: '-=' };
+                    return new Token(TokenType.Operator, '-=', this.lastPos);
                 } else  {
-                    return { type: TokenType.Operator, text: '-' };
+                    return new Token(TokenType.Operator, '-', this.lastPos);
                 }
             } else if (ch === '*') {
                 this.stream.next();
                 let ch1 = this.stream.next();
                 if (ch1 === '=') {
                     this.stream.next();
-                    return { type: TokenType.Operator, text: '*=' };
+                    return new Token(TokenType.Operator, '*=', this.lastPos);
                 } else  {
-                    return { type: TokenType.Operator, text: '*' };
+                    return new Token(TokenType.Operator, '*', this.lastPos);
                 }
             } else {
                 console.log('Unexpected char ' + ch + ' at ' + this.stream.line + ' line ' + ' col: ' + this.stream.col);
@@ -126,8 +156,8 @@ export class Tokenizer {
         }
     }
 
-    private parseIdentifer(): Token {
-        let token:Token = { type: TokenType.Identifier, text: '' };
+    private parseIdentifier(): Token {
+        let token:Token = new Token(TokenType.Identifier, '', this.lastPos);
         token.text += this.stream.next();
         while(!this.stream.eof() && this.isLetterDigitOrUnderScore(this.stream.peek())) {
             token.text += this.stream.next();
@@ -141,7 +171,7 @@ export class Tokenizer {
     }
 
     private parseStringLiteral():Token {
-        let token: Token = { type: TokenType.StringLiteral, text: '' };
+        let token:Token = new Token(TokenType.StringLiteral, '', this.lastPos);
 
         while(!this.stream.eof() && this.stream.peek() !== '"') {
             token.text += this.stream.next();
